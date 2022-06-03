@@ -6,6 +6,14 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
+error Uregistered();
+error SelfReffering();
+error ReRegistring();
+error AlreadyStarted(string round);
+error NotFinished(string round);
+error AlreadyFinished(string round);
+error AmountExeeded(uint256 amount0, uint256 amount1);
+
 contract AcademPlatform is AccessControl, ReentrancyGuard {
     event SaleStarted(uint256 currentRound, uint256 timeStamp);
     event TradeStarted(uint256 currentRound, uint256 timeStamp);
@@ -61,6 +69,12 @@ contract AcademPlatform is AccessControl, ReentrancyGuard {
 
     enum RoundState { sale, trade }
 
+    /*
+     * Constructor
+     * @param {address} daoAddress - Address of the DAO
+     * @param {address} acdmAddress - Address of the ACDM token
+     * @param {uint256} _roundTime - Period of the round
+     */
     constructor(address daoAddress, address acdmAddress, uint256 _roundTime) {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(CHAIR_MAN, msg.sender);
@@ -77,25 +91,35 @@ contract AcademPlatform is AccessControl, ReentrancyGuard {
         bonuses = Bonus(500, 300, 250, 250);
     }
 
+    /*
+     * Registers new user with referrer
+     * @param {address payable} referrer - Referrer address
+     */
     function register(address payable referrer) external {
-        require(users[msg.sender].isUser == false, "Already registered");
-        require(referrer != msg.sender, "Can't refer yourself");
-        require(users[referrer].isUser, "Uregistered referrer");
+        if(users[msg.sender].isUser) revert ReRegistring();
+        if(referrer == msg.sender) revert SelfReffering();
+        if(!users[referrer].isUser) revert Uregistered();
 
         users[msg.sender].isUser = true;
         users[msg.sender].referrer1 = referrer;
         users[msg.sender].referrer2 = users[referrer].referrer1;
     }
-
+    
+    /**
+     * Registers new user
+     */
     function register() external {
-        require(users[msg.sender].isUser == false, "Already registered");
+        if(users[msg.sender].isUser) revert ReRegistring();
         users[msg.sender].isUser = true;
     }
 
+    /**
+     * Starts sale round, only chairman can call this function
+     */
     function startSaleRound() external onlyRole(CHAIR_MAN){
         currentRound++;
-        require(rounds[currentRound-1].round == RoundState.trade, "Sale already started");
-        require(rounds[currentRound-1].startTime + roundTime < block.timestamp, "Trade not finished yet");
+        if(rounds[currentRound-1].round != RoundState.trade) revert AlreadyStarted("sale");
+        if(rounds[currentRound-1].startTime + roundTime >= block.timestamp) revert NotFinished("trade");        
         
         rounds[currentRound].startTime = block.timestamp;
         rounds[currentRound].round = RoundState.sale;
@@ -112,24 +136,31 @@ contract AcademPlatform is AccessControl, ReentrancyGuard {
         emit SaleStarted(currentRound, rounds[currentRound].startTime);
     }
 
+    /**
+     * Starts trade round, only chairman can call this function
+     */
     function startTradeRound() external onlyRole(CHAIR_MAN){
-        require(rounds[currentRound].round == RoundState.sale, "Trade already started");
-        require(rounds[currentRound].startTime + roundTime < block.timestamp, "Sale not finished yet");
+        if(rounds[currentRound].round != RoundState.trade) revert AlreadyStarted("trade");
+        if(rounds[currentRound].startTime + roundTime >= block.timestamp) revert NotFinished("sale");
 
         rounds[currentRound].startTime = block.timestamp;
         rounds[currentRound].round = RoundState.trade;
 
         emit TradeStarted(currentRound, rounds[currentRound].startTime);
     }
-
+    
+    /*
+     * Buy ACDM tokens during sale round
+     * @param {uint256} amount - Amount of tokens to buy
+     */
     function buyACDM(uint256 amount) external payable nonReentrant{
-        require(users[msg.sender].isUser, "Uregistered user");
-        require(rounds[currentRound].round == RoundState.sale , "Too soon for sale");
-        require(rounds[currentRound].startTime + roundTime >= block.timestamp, "Sale already finished");
-        require(rounds[currentRound].tokenMintCount >= amount, "Amount exeeds mintcount");
+        if(!users[msg.sender].isUser) revert Uregistered();
+        if(rounds[currentRound].round != RoundState.sale) revert NotFinished("trade");
+        if(rounds[currentRound].startTime + roundTime < block.timestamp) revert AlreadyFinished("sale");
+        if(rounds[currentRound].tokenMintCount < amount) revert AmountExeeded(rounds[currentRound].tokenMintCount, amount);
 
         uint256 price = rounds[currentRound].tokenPrice;
-        require(msg.value >= amount*price, "Not enough ETH");
+        if(msg.value < amount*price) revert AmountExeeded(msg.value, amount*price);
 
         if(users[msg.sender].referrer1 != address(0)){
             uint256 bonus = (amount*price*bonuses.saleLvl1)/10000;
@@ -149,11 +180,16 @@ contract AcademPlatform is AccessControl, ReentrancyGuard {
         acdmToken.safeTransfer(msg.sender, amount);
     }
 
+    /*
+     * Add order for trade round
+     * @param {uint256} amount - Amount of tokens to buy
+     * @param {uint256} price - Price of the token
+     */
     function addOrder(uint256 amount, uint256 price) external{
-        require(users[msg.sender].isUser, "Uregistered user");
-        require(rounds[currentRound].round == RoundState.trade, "Too soon for trade");
-        require(rounds[currentRound].startTime + roundTime >= block.timestamp, "Trade already finished");
-        require(acdmToken.balanceOf(msg.sender) >= amount, "Not enough ACDM");
+        if(!users[msg.sender].isUser) revert Uregistered();
+        if(rounds[currentRound].round != RoundState.trade) revert NotFinished("sale");
+        if(rounds[currentRound].startTime + roundTime < block.timestamp) revert AlreadyFinished("trade");
+        if(acdmToken.balanceOf(msg.sender) < amount) revert AmountExeeded(acdmToken.balanceOf(msg.sender), amount);
 
         orders[orderId].user = msg.sender;
         orders[orderId].amount = amount;
@@ -166,11 +202,15 @@ contract AcademPlatform is AccessControl, ReentrancyGuard {
         orderId++;
     }
 
+    /*
+     * Cancel order
+     * @param {uint256} orderId - Order id
+     */
     function removeOrder(uint256 _orderId) external{
         require(orders[_orderId].user == msg.sender, "Not an owner");
         require(orders[_orderId].isActive, "No such order");
-        require(rounds[currentRound].round == RoundState.trade, "Too soon for trade");
-        require(rounds[currentRound].startTime + roundTime >= block.timestamp, "Trade already finished");
+        if(rounds[currentRound].round != RoundState.trade) revert NotFinished("sale");
+        if(rounds[currentRound].startTime + roundTime < block.timestamp) revert AlreadyFinished("trade");
         
         orders[_orderId].isActive = false;
         acdmToken.safeTransfer(msg.sender, orders[_orderId].amount);
@@ -178,19 +218,24 @@ contract AcademPlatform is AccessControl, ReentrancyGuard {
         emit OrderRemoved(_orderId);
     }
 
+    /*
+     * Redeem order by id
+     * @param {uint256} orderId - Order id
+     * @param {uint256} amount - Amount of tokens to redeem
+     */
     function redeemOrder(uint256 _orderId, uint256 amount) external payable nonReentrant{
-        require(users[msg.sender].isUser, "Uregistered user");
+        if(!users[msg.sender].isUser) revert Uregistered();
         require(orders[_orderId].isActive, "No such order");
-        require(rounds[currentRound].round == RoundState.trade, "Too soon for trade");
-        require(rounds[currentRound].startTime + roundTime >= block.timestamp, "Trade already finished");
+        if(rounds[currentRound].round != RoundState.trade) revert NotFinished("sale");
+        if(rounds[currentRound].startTime + roundTime < block.timestamp) revert AlreadyFinished("trade");
 
         uint256 price = orders[_orderId].price;
         uint256 currentAmount = orders[_orderId].amount;
         uint256 total = amount * price;
         uint256 bonus;
 
-        require(currentAmount >= amount, "Exeeded order amount");
-        require(msg.value >= total, "Not enough ETH");
+        if(currentAmount < amount) revert AmountExeeded(currentAmount, amount);
+        if(msg.value < total) revert AmountExeeded(msg.value, total);
 
         if(amount == currentAmount){
             orders[_orderId].isActive = false;
@@ -223,6 +268,9 @@ contract AcademPlatform is AccessControl, ReentrancyGuard {
         emit OrderRedeemed(_orderId, msg.sender, amount, price);
     }
 
+    /**
+     * Sets bonuses for lvl refferal, only dao can call this function
+     */
     function setBonuses(
         uint256 _saleLvl1,
         uint256 _saleLvl2, 
