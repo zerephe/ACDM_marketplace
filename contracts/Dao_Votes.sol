@@ -58,6 +58,10 @@ contract DAO is AccessControl {
         debatePeriod = _dabatePeriod;
     }
 
+    receive() external payable{
+        
+    }
+
     /**
      * Sets new chairman
      * @param {address} _chairMan - Chairman address
@@ -178,7 +182,8 @@ contract DAO is AccessControl {
         path[0] = WETH9;
         path[1] = address(xxxToken);
 
-        uint256 amountOut = getAmountOutMin(WETH9, address(xxxToken), address(this).balance);
+        uint256[] memory amountOutMins = IUniswapV2Router01(UNISWAP_V2_ROUTER).getAmountsOut(address(this).balance, path);
+        uint256 amountOut = amountOutMins[1];
         IUniswapV2Router01(UNISWAP_V2_ROUTER).swapExactETHForTokens{value: address(this).balance}(
             amountOut,
             path,
@@ -189,23 +194,5 @@ contract DAO is AccessControl {
         xxxToken.burn(amountOut);
         
         return true;
-    }
-
-    function getAmountOutMin(address _tokenIn, address _tokenOut, uint256 _amountIn) public view returns (uint256) {
-
-        address[] memory path;
-        if (_tokenIn == WETH9 || _tokenOut == WETH9) {
-            path = new address[](2);
-            path[0] = _tokenIn;
-            path[1] = _tokenOut;
-        } else {
-            path = new address[](3);
-            path[0] = _tokenIn;
-            path[1] = WETH9;
-            path[2] = _tokenOut;
-        }
-        
-        uint256[] memory amountOutMins = IUniswapV2Router01(UNISWAP_V2_ROUTER).getAmountsOut(_amountIn, path);
-        return amountOutMins[path.length -1];  
     }
 }

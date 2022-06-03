@@ -150,7 +150,7 @@ contract AcademPlatform is AccessControl {
      */
     function buyACDM(uint256 amount) external payable {
         Round memory currRound = rounds[currentRound];
-        
+
         if(!users[msg.sender].isUser) revert Uregistered();
         if(currRound.round != RoundState.sale) revert NotFinished("trade");
         if(currRound.startTime + roundTime < block.timestamp) revert AlreadyFinished("sale");
@@ -218,13 +218,15 @@ contract AcademPlatform is AccessControl {
      * @param {uint256} amount - Amount of tokens to redeem
      */
     function redeemOrder(uint256 _orderId, uint256 amount) external payable {
+        Order memory order = orders[_orderId];
+
         if(!users[msg.sender].isUser) revert Uregistered();
-        require(orders[_orderId].isActive, "No such order");
+        require(order.isActive, "No such order");
         if(rounds[currentRound].round != RoundState.trade) revert NotFinished("sale");
         if(rounds[currentRound].startTime + roundTime < block.timestamp) revert AlreadyFinished("trade");
 
-        uint256 price = orders[_orderId].price;
-        uint256 currentAmount = orders[_orderId].amount;
+        uint256 price = order.price;
+        uint256 currentAmount = order.amount;
         uint256 total = amount * price;
         uint256 bonus;
 
@@ -232,10 +234,10 @@ contract AcademPlatform is AccessControl {
         if(msg.value < total) revert AmountExeeded(msg.value, total);
 
         if(amount == currentAmount){
-            orders[_orderId].isActive = false;
+            order.isActive = false;
         }
         else{
-            orders[_orderId].amount -= amount;
+            order.amount -= amount;
         }
 
         rounds[currentRound].tradedEthCount += total;
@@ -246,7 +248,6 @@ contract AcademPlatform is AccessControl {
         } else{
             payable(dao).transfer(bonus);
         }
-        total -= bonus;
 
         bonus = (total*bonuses[3])/10000;
         if(users[msg.sender].referrer2 != address(0)){
@@ -254,10 +255,9 @@ contract AcademPlatform is AccessControl {
         } else {
             payable(dao).transfer(bonus);
         }
-        total -= bonus;
         
         acdmToken.transfer(msg.sender, amount);
-        payable(orders[_orderId].user).transfer(total);
+        payable(order.user).transfer(total);
 
         emit OrderRedeemed(_orderId, msg.sender, amount, price);
     }
