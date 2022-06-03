@@ -1,0 +1,105 @@
+//SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+interface IDAO {
+    function setVotes(address voterAddress, uint256 amount) external returns(bool);
+}
+
+contract Stacking is AccessControl, ReentrancyGuard {
+    bytes32 public constant DAO_ROLE = keccak256("DAO_ROLE");
+
+    using SafeERC20 for ERC20;
+    ERC20 public stakeToken;
+    ERC20 public rewardToken;
+    IDAO public dao;
+
+    uint256 public rewardCo;
+    uint256 public rewardGenTime;
+    uint256 public tokenLockTime;
+
+    mapping(address => StakeToken) private stakes;
+
+    struct StakeToken {
+        uint256 amount;
+        uint256 timestamp;
+    }
+
+    constructor(address _lpToken, address _rewardToken, address daoAddress) {
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(DAO_ROLE, daoAddress);
+
+        rewardCo = 300;
+        rewardGenTime = 7 days;
+        tokenLockTime = 30 days;
+        stakeToken = ERC20(_lpToken);
+        rewardToken = ERC20(_rewardToken);
+        dao = IDAO(daoAddress);
+    }
+
+    function stake(uint256 amount) external returns(bool) {        
+        stakeToken.safeTransferFrom(msg.sender, address(this), amount);
+
+        stakes[msg.sender] = StakeToken(stakes[msg.sender].amount + amount, block.timestamp);
+        dao.setVotes(msg.sender, stakes[msg.sender].amount);
+
+        return true;
+    }
+
+    function unstake() external nonReentrant returns(bool) {
+        uint256 _locktime = stakes[msg.sender].timestamp + tokenLockTime;
+        require(_locktime <= block.timestamp, "Too soon to unstake mf!");
+        require(stakes[msg.sender].amount > 0, "Nothing to unstake mf!");
+
+        stakeToken.safeTransfer(msg.sender, stakes[msg.sender].amount);
+
+        _claim(msg.sender);
+
+        stakes[msg.sender].amount = 0;
+        dao.setVotes(msg.sender, stakes[msg.sender].amount);
+
+        return true;
+    }
+
+    function claim() external nonReentrant returns(bool) {
+
+        _claim(msg.sender);
+
+        return true;
+    }
+
+    function _claim(address _owner) private nonReentrant returns(bool) {
+        require(stakes[_owner].amount > 0, "You are not a staker mf!");
+        uint256 _rewardGen = (block.timestamp - stakes[_owner].timestamp) / rewardGenTime;
+
+
+        uint256 _reward = _rewardGen * ((stakes[_owner].amount * rewardCo) / 10000);
+        rewardToken.safeTransfer(_owner, _reward);
+
+        return true;
+    }
+
+    function setReward(uint256 _rewardCo) external onlyRole(DEFAULT_ADMIN_ROLE) returns(bool) {
+        require(_rewardCo <= 10000, "Too high reward mf!");
+
+        rewardCo = _rewardCo;
+
+        return true;
+    }
+
+    function setLockTime(uint256 _tokenLockTime) external onlyRole(DAO_ROLE) returns(bool) {
+        require(_tokenLockTime >= 1, "Min token locktime is 1 mf!");
+
+        tokenLockTime = _tokenLockTime * 1 days;
+
+        return true;
+    }
+
+    function getStakeAmount(address _owner) external view returns(uint256) {
+        return stakes[_owner].amount;
+    }
+}
