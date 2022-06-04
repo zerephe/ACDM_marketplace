@@ -3,13 +3,12 @@ import { task } from "hardhat/config";
 
 dotenv.config();
 
-task("deposit", "Deposit tokens in dao")
-  .addParam("amount", "Amount to deposit")
+task("startSale", "Start sale round")
   .setAction(async (args, hre) => {
     const contractAddress = process.env.CONTRACT_ADDRESS as string;
-    const daoInstance = await hre.ethers.getContractAt("DAO", contractAddress);
+    const platformInstance = await hre.ethers.getContractAt("AcademPlatform", contractAddress);
 
-    const result = await daoInstance.deposit(args.amount);
+    const result = await platformInstance.startSaleRound();
     console.log(result);
   });
 
