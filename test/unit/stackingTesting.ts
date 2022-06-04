@@ -4,7 +4,7 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { Contract } from "ethers";
 import { Address } from "cluster";
 
-describe.only("Staking", function () {
+describe("Staking", function () {
 
   let stakingInstance: Contract;
   let daoInstance: Contract;
