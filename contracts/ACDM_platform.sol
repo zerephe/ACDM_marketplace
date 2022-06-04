@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 
 error Uregistered();
 error SelfReffering();
-error ReRegistring();
+error AlreadyRegistered();
 error AlreadyStarted(string round);
 error NotFinished(string round);
 error AlreadyFinished(string round);
@@ -71,7 +71,7 @@ contract AcademPlatform is AccessControl {
 
         dao = daoAddress;
         acdmToken = IACDM_token(acdmAddress);
-        roundTime = _roundTime;
+        roundTime = _roundTime * 1 days;
         invDecimals = (10**18/(10**acdmToken.decimals()));
 
         rounds[0].round = RoundState.trade;
@@ -90,7 +90,7 @@ contract AcademPlatform is AccessControl {
      * @param {address payable} referrer - Referrer address
      */
     function register(address payable referrer) external {
-        if(users[msg.sender].isUser) revert ReRegistring();
+        if(users[msg.sender].isUser) revert AlreadyRegistered();
         if(referrer == msg.sender) revert SelfReffering();
         if(!users[referrer].isUser) revert Uregistered();
 
@@ -101,7 +101,7 @@ contract AcademPlatform is AccessControl {
      * Registers new user
      */
     function register() external {
-        if(users[msg.sender].isUser) revert ReRegistring();
+        if(users[msg.sender].isUser) revert AlreadyRegistered();
         users[msg.sender].isUser = true;
     }
 
@@ -111,37 +111,37 @@ contract AcademPlatform is AccessControl {
     function startSaleRound() external onlyRole(CHAIR_MAN){
         currentRound++;
         Round memory prevRound = rounds[currentRound-1];
-        Round memory currRound = rounds[currentRound];
 
-        if(prevRound.round != RoundState.trade) revert AlreadyStarted("sale");
+        if(prevRound.round == RoundState.sale) revert AlreadyStarted("sale");
         if(prevRound.startTime + roundTime >= block.timestamp) revert NotFinished("trade");        
         
-        currRound.startTime = block.timestamp;
-        currRound.round = RoundState.sale;
+        rounds[currentRound] = Round(
+            RoundState.sale,
+            block.timestamp,
+            prevRound.tradedEthCount / rounds[currentRound].tokenPrice, 
+            rounds[currentRound].tokenPrice, 
+            0
+        );
 
-        currRound.tokenMintCount = prevRound.tradedEthCount / currRound.tokenPrice;
+        acdmToken.mint(address(this), rounds[currentRound].tokenMintCount);
 
-        acdmToken.mint(address(this), currRound.tokenMintCount);
-
-        uint256 lastPrice = currRound.tokenPrice / invDecimals;
+        uint256 lastPrice = rounds[currentRound].tokenPrice / invDecimals;
         rounds[currentRound + 1].tokenPrice = ((((lastPrice * 103 + 400) * invDecimals) / 10**2) / invDecimals) * invDecimals;
         
-        emit SaleStarted(currentRound, currRound.startTime);
+        emit SaleStarted(currentRound, rounds[currentRound].startTime);
     }
 
     /**
      * Starts trade round, only chairman can call this function
      */
-    function startTradeRound() external onlyRole(CHAIR_MAN){
-        Round memory currRound = rounds[currentRound];
-        
-        if(currRound.round != RoundState.trade) revert AlreadyStarted("trade");
-        if(currRound.startTime + roundTime >= block.timestamp) revert NotFinished("sale");
+    function startTradeRound() external onlyRole(CHAIR_MAN){     
+        if(rounds[currentRound].round == RoundState.trade) revert AlreadyStarted("trade");   
+        if(rounds[currentRound].startTime + roundTime >= block.timestamp) revert NotFinished("sale");
 
-        currRound.startTime = block.timestamp;
-        currRound.round = RoundState.trade;
+        rounds[currentRound].startTime = block.timestamp;
+        rounds[currentRound].round = RoundState.trade;
 
-        emit TradeStarted(currentRound, currRound.startTime);
+        emit TradeStarted(currentRound, rounds[currentRound].startTime);
     }
     
     /*
@@ -149,29 +149,29 @@ contract AcademPlatform is AccessControl {
      * @param {uint256} amount - Amount of tokens to buy
      */
     function buyACDM(uint256 amount) external payable {
-        Round memory currRound = rounds[currentRound];
+        User memory user = users[msg.sender];
 
-        if(!users[msg.sender].isUser) revert Uregistered();
-        if(currRound.round != RoundState.sale) revert NotFinished("trade");
-        if(currRound.startTime + roundTime < block.timestamp) revert AlreadyFinished("sale");
-        if(currRound.tokenMintCount < amount) revert AmountExeeded(currRound.tokenMintCount, amount);
+        if(!user.isUser) revert Uregistered();
+        if(rounds[currentRound].round != RoundState.sale) revert NotFinished("trade");
+        if(rounds[currentRound].startTime + roundTime < block.timestamp) revert AlreadyFinished("sale");
+        if(rounds[currentRound].tokenMintCount < amount) revert AmountExeeded(rounds[currentRound].tokenMintCount, amount);
 
-        uint256 price = currRound.tokenPrice;
+        uint256 price = rounds[currentRound].tokenPrice;
         if(msg.value < amount*price) revert AmountExeeded(msg.value, amount*price);
 
-        if(users[msg.sender].referrer1 != address(0)){
+        if(user.referrer1 != address(0)){
             uint256 bonus = (amount*price*bonuses[0])/10000;
-            users[msg.sender].referrer1.transfer(bonus);
+            user.referrer1.transfer(bonus);
         }
-        else if(users[msg.sender].referrer2 != address(0)){
+        if(user.referrer2 != address(0)){
             uint256 bonus = (amount*price*bonuses[1])/10000;
-            users[msg.sender].referrer2.transfer(bonus);
+            user.referrer2.transfer(bonus);
         }
 
-        currRound.tokenMintCount -= amount;
+        rounds[currentRound].tokenMintCount -= amount;
 
-        if(currRound.tokenMintCount == 0){
-            currRound.startTime = 0;
+        if(rounds[currentRound].tokenMintCount == 0){
+            rounds[currentRound].startTime = 0;
         }
 
         acdmToken.transfer(msg.sender, amount);
@@ -218,15 +218,14 @@ contract AcademPlatform is AccessControl {
      * @param {uint256} amount - Amount of tokens to redeem
      */
     function redeemOrder(uint256 _orderId, uint256 amount) external payable {
-        Order memory order = orders[_orderId];
-
-        if(!users[msg.sender].isUser) revert Uregistered();
-        require(order.isActive, "No such order");
+        User memory user = users[msg.sender];
+        if(!user.isUser) revert Uregistered();
+        require(orders[_orderId].isActive, "No such order");
         if(rounds[currentRound].round != RoundState.trade) revert NotFinished("sale");
         if(rounds[currentRound].startTime + roundTime < block.timestamp) revert AlreadyFinished("trade");
 
-        uint256 price = order.price;
-        uint256 currentAmount = order.amount;
+        uint256 price = orders[_orderId].price;
+        uint256 currentAmount = orders[_orderId].amount;
         uint256 total = amount * price;
         uint256 bonus;
 
@@ -234,30 +233,30 @@ contract AcademPlatform is AccessControl {
         if(msg.value < total) revert AmountExeeded(msg.value, total);
 
         if(amount == currentAmount){
-            order.isActive = false;
+            orders[_orderId].isActive = false;
         }
         else{
-            order.amount -= amount;
+            orders[_orderId].amount -= amount;
         }
 
         rounds[currentRound].tradedEthCount += total;
 
         bonus = (total*bonuses[2])/10000;
-        if(users[msg.sender].referrer1 != address(0)){         
-            users[msg.sender].referrer1.transfer(bonus);
+        if(user.referrer1 != address(0)){         
+            user.referrer1.transfer(bonus);
         } else{
             payable(dao).transfer(bonus);
         }
 
         bonus = (total*bonuses[3])/10000;
-        if(users[msg.sender].referrer2 != address(0)){
-            users[msg.sender].referrer2.transfer(bonus);
+        if(user.referrer2 != address(0)){
+            user.referrer2.transfer(bonus);
         } else {
             payable(dao).transfer(bonus);
         }
         
         acdmToken.transfer(msg.sender, amount);
-        payable(order.user).transfer(total);
+        payable(orders[_orderId].user).transfer(total);
 
         emit OrderRedeemed(_orderId, msg.sender, amount, price);
     }

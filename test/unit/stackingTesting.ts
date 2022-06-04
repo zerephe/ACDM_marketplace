@@ -100,41 +100,15 @@ describe("Staking", function () {
     });
 
     it("Should be able to change min token locktime", async function() {
-      const iface = new ethers.utils.Interface([
-        "function setLockTime(uint256 _tokenLockTime)"
-      ]);
-      const calldata = iface.encodeFunctionData('setLockTime',[15]);
+      await stakingInstance.grantRole(stakingInstance.DAO_ROLE(), owner.address);
+      await stakingInstance.setLockTime(15);
 
-      await daoInstance.addProposal(stakingInstance.address, calldata, "Update token locktime");
-
-      await lpToken.connect(staker1).approve(stakingInstance.address, 1000);
-      await stakingInstance.connect(staker1).stake(1000);
-      await daoInstance.connect(staker1).vote(0, 1000, true);
-
-      await ethers.provider.send('evm_increaseTime', [60000]);
-      await ethers.provider.send('evm_mine', []);
-
-      await daoInstance.connect(staker1).finishProposal(0);
-
-      expect(await stakingInstance.connect(staker1).tokenLockTime()).to.eq(15*86400);
+      expect(await stakingInstance.tokenLockTime()).to.eq(15*86400);
     });
 
     it("Should be reverted with min token locktime is 1", async function() {
-      const iface = new ethers.utils.Interface([
-        "function setLockTime(uint256 _tokenLockTime)"
-      ]);
-      const calldata = iface.encodeFunctionData('setLockTime',[0]);
-
-      await daoInstance.addProposal(stakingInstance.address, calldata, "Update token locktime");
-
-      await lpToken.connect(staker1).approve(stakingInstance.address, 1000);
-      await stakingInstance.connect(staker1).stake(1000);
-      await daoInstance.connect(staker1).vote(0, 1000, true);
-
-      await ethers.provider.send('evm_increaseTime', [60000]);
-      await ethers.provider.send('evm_mine', []);
-
-      await expect(daoInstance.finishProposal(0)).to.be.revertedWith("ERROR call func");
+      await stakingInstance.grantRole(stakingInstance.DAO_ROLE(), owner.address);
+      await expect(stakingInstance.setLockTime(0)).to.be.revertedWith("Min token locktime is 1 mf!");
     });
 
     it("Should be some staked tokens", async function() {

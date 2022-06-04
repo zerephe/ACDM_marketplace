@@ -14,6 +14,20 @@ describe("Dao", function () {
   let owner: SignerWithAddress;
   let addr1: SignerWithAddress;
 
+  before (async function () {
+    await network.provider.request({
+      method: "hardhat_reset",
+      params: [
+        {
+          forking: {
+            jsonRpcUrl: `https://eth-mainnet.alchemyapi.io/v2/${process.env.MAINNET_API}`,
+            blockNumber: 14390400,
+          },
+        },
+      ],
+    });
+  });
+
   beforeEach(async function(){
     [owner, addr1] = await ethers.getSigners();
 
