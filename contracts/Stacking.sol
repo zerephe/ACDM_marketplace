@@ -29,6 +29,13 @@ contract Stacking is AccessControl, ReentrancyGuard {
         uint256 timestamp;
     }
 
+
+    /*
+     * Constructor - sets initial values and roles
+     * @param {address} _lpToken - Address of the token used for stakes
+     * @param {address} _rewardToken - Address of the token used for rewards
+     * @param {address} daoAddress - Address of the DAO contract
+     */
     constructor(address _lpToken, address _rewardToken, address daoAddress) {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(DAO_ROLE, daoAddress);
@@ -40,7 +47,12 @@ contract Stacking is AccessControl, ReentrancyGuard {
         rewardToken = ERC20(_rewardToken);
         dao = IDAO(daoAddress);
     }
-
+    
+    /**
+     * Stake tokens in order to participate in DAO voting
+     * @param {uint256} amount - Amount of tokens to stake
+     * @return {bool} - Returns true if transaction succeed
+     */
     function stake(uint256 amount) external returns(bool) {        
         stakeToken.safeTransferFrom(msg.sender, address(this), amount);
 
@@ -50,6 +62,10 @@ contract Stacking is AccessControl, ReentrancyGuard {
         return true;
     }
 
+    /**
+     * Withdraws tokens from the stake
+     * @return {bool} - Returns true if transaction succeed
+     */
     function unstake() external nonReentrant returns(bool) {
         uint256 _locktime = stakes[msg.sender].timestamp + tokenLockTime;
         require(_locktime <= block.timestamp, "Too soon to unstake mf!");
@@ -65,6 +81,10 @@ contract Stacking is AccessControl, ReentrancyGuard {
         return true;
     }
 
+    /**
+     * Claim tokens from the reward
+     * @return {bool} - Returns true if transaction succeed
+     */
     function claim() external nonReentrant returns(bool) {
 
         _claim(msg.sender);
@@ -72,7 +92,11 @@ contract Stacking is AccessControl, ReentrancyGuard {
         return true;
     }
 
-    function _claim(address _owner) private returns(bool) {
+    /**
+     * Internal claim function
+     * @return {bool} - Returns true if transaction succeed
+     */
+    function _claim(address _owner) internal returns(bool) {
         require(stakes[_owner].amount > 0, "You are not a staker mf!");
         uint256 _rewardGen = (block.timestamp - stakes[_owner].timestamp) / rewardGenTime;
 
@@ -83,6 +107,11 @@ contract Stacking is AccessControl, ReentrancyGuard {
         return true;
     }
 
+    /**
+     * Internal claim function
+     * @param {uint256} _rewardCo - Reward coefficient
+     * @return {bool} - Returns true if transaction succeed
+     */
     function setReward(uint256 _rewardCo) external onlyRole(DEFAULT_ADMIN_ROLE) returns(bool) {
         require(_rewardCo <= 10000, "Too high reward mf!");
 
@@ -91,6 +120,11 @@ contract Stacking is AccessControl, ReentrancyGuard {
         return true;
     }
 
+    /**
+     * Sets token lock time
+     * @param {uint256} _tokenLockTime - Token lock time
+     * @return {bool} - Returns true if transaction succeed
+     */
     function setLockTime(uint256 _tokenLockTime) external onlyRole(DAO_ROLE) returns(bool) {
         require(_tokenLockTime >= 1, "Min token locktime is 1 mf!");
 
@@ -99,6 +133,11 @@ contract Stacking is AccessControl, ReentrancyGuard {
         return true;
     }
 
+    /**
+     * Sets token lock time
+     * @param {address} _owner - Address of the stake owner
+     * @return {bool} - Returns true if transaction succeed
+     */
     function getStakeAmount(address _owner) external view returns(uint256) {
         return stakes[_owner].amount;
     }

@@ -10,6 +10,12 @@ contract ACDMTokens is ERC20, AccessControl, ERC20Burnable {
 
     uint8 private deci;
     
+    /*
+     * Constructor - Initialize the contract with the parameters and roles
+     * @param {string} name - Name of the token
+     * @param {string} symbol - Symbol of the token
+     * @param {uint8} _deci - Number of decimals
+     */
     constructor(string memory name, string memory symbol, uint8 _deci) ERC20(name, symbol) {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(MINTER_ROLE, msg.sender);

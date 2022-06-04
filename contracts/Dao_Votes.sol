@@ -175,7 +175,10 @@ contract DAO is AccessControl {
         return true;
     }
 
-    
+    /**
+     * Buys xxxtokens for bonus ETH and burns xxxtokens
+     * @return {bool} - Returns true if success
+     */
     function burnXXX() external onlyRole(DAO_ROLE) returns(bool) {
         address[] memory path;
         path = new address[](2);
