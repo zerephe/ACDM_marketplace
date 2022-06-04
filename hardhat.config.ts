@@ -7,6 +7,18 @@ import "solidity-coverage";
 
 dotenv.config();
 
+import "./task/DAO/addProposal.ts";
+import "./task/DAO/vote.ts";
+import "./task/DAO/finishProposal.ts";
+import "./task/Platform/addOrder.ts";
+import "./task/Platform/redeemOrder.ts";
+import "./task/Platform/removeOrder.ts";
+import "./task/Platform/startSale.ts";
+import "./task/Platform/startTrade.ts";
+import "./task/Platform/buyACDM.ts";
+import "./task/Staking/stake.ts";
+import "./task/Staking/unstake.ts";
+
 task("accounts", "Prints the list of accounts", async (taskArgs, hre) => {
   const accounts = await hre.ethers.getSigners();
 
