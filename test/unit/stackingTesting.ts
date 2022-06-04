@@ -40,14 +40,15 @@ describe.only("Staking", function () {
     router = (await ethers.getContractAt("IUniswapV2Router02", process.env.ROUTER2_ADDRESS as string));
     factory = (await ethers.getContractAt("IUniswapV2Factory", process.env.FACTORY_ADDRESS as string));
 
-    await xxxToken.mint(staker1.address, ethers.utils.parseUnits("1000", await xxxToken.decimals()));
+    await xxxToken.mint(staker1.address, 1000000);
+    await xxxToken.mint(owner.address, 10000);
     await xxxToken.connect(staker1).approve(router.address, ethers.constants.MaxUint256);
 
     let deadline = new Date().getTime();
 
     await router.connect(staker1).addLiquidityETH(
       xxxToken.address,
-      ethers.utils.parseUnits("1000", await xxxToken.decimals()),
+      10000,
       0,
       ethers.utils.parseEther("1"),
       staker1.address,
@@ -70,6 +71,7 @@ describe.only("Staking", function () {
 
     await daoInstance.grantRole(daoInstance.CHAIR_MAN(), stakingInstance.address);
     await stakingInstance.grantRole(stakingInstance.DAO_ROLE(), daoInstance.address);
+    
   });
 
   describe("Deploy", function(){
@@ -83,6 +85,7 @@ describe.only("Staking", function () {
       expect(await stakingInstance.rewardCo()).to.eq(300);
       expect(await stakingInstance.rewardGenTime()).to.eq(7*86400);
       expect(await stakingInstance.tokenLockTime()).to.eq(30*86400);
+      expect(await xxxToken.decimals()).to.eq(18);
     });
   });
 
@@ -104,16 +107,16 @@ describe.only("Staking", function () {
 
       await daoInstance.addProposal(stakingInstance.address, calldata, "Update token locktime");
 
-      await xxxToken.approve(stakingInstance.address, 1000);
-      await stakingInstance.stake(1000);
-      await daoInstance.vote(0, 1000, true);
+      await lpToken.connect(staker1).approve(stakingInstance.address, 1000);
+      await stakingInstance.connect(staker1).stake(1000);
+      await daoInstance.connect(staker1).vote(0, 1000, true);
 
       await ethers.provider.send('evm_increaseTime', [60000]);
       await ethers.provider.send('evm_mine', []);
 
-      await daoInstance.finishProposal(0);
+      await daoInstance.connect(staker1).finishProposal(0);
 
-      expect(await stakingInstance.tokenLockTime()).to.eq(15*86400);
+      expect(await stakingInstance.connect(staker1).tokenLockTime()).to.eq(15*86400);
     });
 
     it("Should be reverted with min token locktime is 1", async function() {
@@ -124,14 +127,12 @@ describe.only("Staking", function () {
 
       await daoInstance.addProposal(stakingInstance.address, calldata, "Update token locktime");
 
-      await xxxToken.approve(stakingInstance.address, 1000);
-      await stakingInstance.stake(1000);
-      await daoInstance.vote(0, 1000, true);
+      await lpToken.connect(staker1).approve(stakingInstance.address, 1000);
+      await stakingInstance.connect(staker1).stake(1000);
+      await daoInstance.connect(staker1).vote(0, 1000, true);
 
       await ethers.provider.send('evm_increaseTime', [60000]);
       await ethers.provider.send('evm_mine', []);
-
-      await daoInstance.finishProposal(0);
 
       await expect(daoInstance.finishProposal(0)).to.be.revertedWith("ERROR call func");
     });
@@ -152,12 +153,12 @@ describe.only("Staking", function () {
       //stake some tokens
       await stakingInstance.connect(staker1).stake(1000);
       expect(await stakingInstance.connect(staker1).getStakeAmount(staker1.address)).to.eq(1000);
-      await stakingInstance.setLockTime(1, 2);
 
       //mint some reward tokens
-      await xxxToken._mint(stakingInstance.address, 10000);
+      await xxxToken.mint(stakingInstance.address, 10000);
 
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await ethers.provider.send('evm_increaseTime', [86400*32]);
+      await ethers.provider.send('evm_mine', []);
 
       //unstake and check
       await stakingInstance.connect(staker1).unstake();
@@ -170,12 +171,12 @@ describe.only("Staking", function () {
       //stake some tokens
       await stakingInstance.connect(staker1).stake(1000);
       expect(await stakingInstance.connect(staker1).getStakeAmount(staker1.address)).to.eq(1000);
-      await stakingInstance.setLockTime(1, 2);
 
       //mint some reward tokens
-      await xxxToken._mint(stakingInstance.address, 10000);
+      await xxxToken.mint(stakingInstance.address, 10000);
 
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await ethers.provider.send('evm_increaseTime', [86400*32]);
+      await ethers.provider.send('evm_mine', []);
 
       //unstake and check
       await stakingInstance.connect(staker1).claim();
@@ -190,17 +191,17 @@ describe.only("Staking", function () {
       //stake some tokens
       await stakingInstance.connect(staker1).stake(1000);
       expect(await stakingInstance.connect(staker1).getStakeAmount(staker1.address)).to.eq(1000);
-      await stakingInstance.setLockTime(1, 2);
       await stakingInstance.setReward(50);
 
       //mint some reward tokens
-      await xxxToken._mint(stakingInstance.address, 10000);
+      await xxxToken.mint(stakingInstance.address, 10000);
 
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await ethers.provider.send('evm_increaseTime', [86400*32]);
+      await ethers.provider.send('evm_mine', []);
 
       //claim and check
       await stakingInstance.connect(staker1).claim();
-      expect(await xxxToken.balanceOf(staker1.address)).to.eq(balance + 500);
+      expect(await xxxToken.balanceOf(staker1.address)).to.eq(balance + 20);
     });
 
     it("Should revert with too soon to unstake", async function() {
@@ -215,43 +216,17 @@ describe.only("Staking", function () {
     });
 
     it("Should revert with nothing to unstake", async function() {
-      await stakingInstance.setLockTime(1, 2);
-
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await ethers.provider.send('evm_increaseTime', [86400*32]);
+      await ethers.provider.send('evm_mine', []);
 
       await expect(stakingInstance.connect(staker1).unstake()).to.be.revertedWith("Nothing to unstake mf!");
     });
 
-    it("Should revert with too soon to claim", async function() {
-      await lpToken.connect(staker1).approve(stakingInstance.address, ethers.utils.parseUnits("0.001", await lpToken.decimals()));
-      
-      await stakingInstance.connect(staker1).stake(1000);
-      expect(await stakingInstance.connect(staker1).getStakeAmount(staker1.address)).to.eq(1000);
-
-      await expect(stakingInstance.connect(staker1).claim()).to.be.revertedWith("Too soon to claim reward mf!");
-    });
-
     it("Should revert if not a staker", async function() {
-      await stakingInstance.setLockTime(1, 2);
+      await ethers.provider.send('evm_increaseTime', [86400*32]);
+      await ethers.provider.send('evm_mine', []);
 
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      await expect(stakingInstance.connect(staker1).claim()).to.be.revertedWith("You are not a staker mf!");
-    });
-
-    it("Should revert with nothing to claim", async function() {
-      await lpToken.connect(staker1).approve(stakingInstance.address, ethers.utils.parseUnits("0.001", await lpToken.decimals()));
-      
-      await stakingInstance.connect(staker1).stake(1000);
-      expect(await stakingInstance.connect(staker1).getStakeAmount(staker1.address)).to.eq(1000);
-      await stakingInstance.setLockTime(1, 2);
-      await xxxToken._mint(stakingInstance.address, 10000);
-
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      await stakingInstance.connect(staker1).claim();
-
-      await expect(stakingInstance.connect(staker1).claim()).to.be.revertedWith("Nothing to claim mf!");
+      await expect(stakingInstance.claim()).to.be.revertedWith("You are not a staker mf!");
     });
   });
 });

@@ -72,7 +72,7 @@ contract Stacking is AccessControl, ReentrancyGuard {
         return true;
     }
 
-    function _claim(address _owner) private nonReentrant returns(bool) {
+    function _claim(address _owner) private returns(bool) {
         require(stakes[_owner].amount > 0, "You are not a staker mf!");
         uint256 _rewardGen = (block.timestamp - stakes[_owner].timestamp) / rewardGenTime;
 
