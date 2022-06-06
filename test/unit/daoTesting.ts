@@ -5,7 +5,7 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { Contract } from "ethers";
 dotenv.config();
 
-describe("Dao", function () {
+describe.only("Dao", function () {
 
   let tokenInstance: Contract;
   let daoInstance: Contract;
@@ -36,7 +36,7 @@ describe("Dao", function () {
     await tokenInstance.deployed();
 
     const DAO = await ethers.getContractFactory("DAO");
-    daoInstance = await DAO.deploy(owner.address, tokenInstance.address, 800, 10000);
+    daoInstance = await DAO.deploy(owner.address, tokenInstance.address, 800, 3*86400);
     await daoInstance.deployed();
     
     const Stacking = await ethers.getContractFactory("Stacking");
@@ -44,6 +44,7 @@ describe("Dao", function () {
     await stakingInstance.deployed();
 
     await daoInstance.grantRole(daoInstance.CHAIR_MAN(), stakingInstance.address);
+    await stakingInstance.grantRole(stakingInstance.DAO_ROLE(), owner.address);
     await owner.sendTransaction({
       to: daoInstance.address,
       value: 1000,
@@ -62,7 +63,7 @@ describe("Dao", function () {
     it("Should be valid initial values", async function() {
       expect(await daoInstance.chairMan()).to.eq(owner.address);
       expect(await daoInstance.minQ()).to.eq(800);
-      expect(await daoInstance.debatePeriod()).to.eq(10000);
+      expect(await daoInstance.debatePeriod()).to.eq(3*86400);
     });
   });
 
@@ -103,6 +104,41 @@ describe("Dao", function () {
       expect(await daoInstance.getVoterPositionForProposal(owner.address, 0)).to.eq(100);
     });
 
+    it("Should be able to Vote twice and not update last vote timestamp", async function() {
+      const iface = new ethers.utils.Interface([
+        "function updateProposalParams(address _voteTokenAddress, uint256 _minQ, uint256 _dabatePeriod)"
+      ]);
+      const voteTokenAddress = addr1.address;
+      const calldata = iface.encodeFunctionData('updateProposalParams',[voteTokenAddress, 500, 5000]);
+
+      await daoInstance.addProposal(daoInstance.address, calldata, "Update token, min quorum, debate period");
+
+      await tokenInstance.approve(stakingInstance.address, 100);
+      await stakingInstance.stake(100);
+      await daoInstance.vote(0, 50, true);
+      await daoInstance.vote(0, 50, true);
+      expect((await daoInstance.voters(owner.address))[1]).to.not.eq(0);
+    });
+
+    it("Should revert if user trying unstake while in debate", async function() {
+      const iface = new ethers.utils.Interface([
+        "function updateProposalParams(address _voteTokenAddress, uint256 _minQ, uint256 _dabatePeriod)"
+      ]);
+      const voteTokenAddress = addr1.address;
+      const calldata = iface.encodeFunctionData('updateProposalParams',[voteTokenAddress, 500, 5000]);
+
+      await daoInstance.addProposal(daoInstance.address, calldata, "Update token, min quorum, debate period");
+
+      await tokenInstance.approve(stakingInstance.address, 100);
+      await stakingInstance.stake(100);
+      await daoInstance.vote(0, 50, true);
+      await stakingInstance.setLockTime(1);
+      await ethers.provider.send('evm_increaseTime', [86400]);
+      await ethers.provider.send('evm_mine', []);
+
+      await expect(stakingInstance.unstake()).to.be.revertedWith("Too soon to unstake");
+    })
+
     it("Should be reverted if proposal already doesn't exist", async function() {
       const iface = new ethers.utils.Interface([
         "function updateProposalParams(address _voteTokenAddress, uint256 _minQ, uint256 _dabatePeriod)"
@@ -115,7 +151,7 @@ describe("Dao", function () {
       await tokenInstance.approve(stakingInstance.address, 100);
       await stakingInstance.stake(100);
 
-      await ethers.provider.send('evm_increaseTime', [60000]);
+      await ethers.provider.send('evm_increaseTime', [3*86400]);
       await ethers.provider.send('evm_mine', []);
 
       await expect(daoInstance.vote(0, 100, true)).to.be.revertedWith("Proposal doesn't exist!");
@@ -148,7 +184,7 @@ describe("Dao", function () {
       await stakingInstance.stake(1000);
       await daoInstance.vote(0, 1000, true);
 
-      await ethers.provider.send('evm_increaseTime', [60000]);
+      await ethers.provider.send('evm_increaseTime', [3*86400]);
       await ethers.provider.send('evm_mine', []);
 
       await daoInstance.finishProposal(0);
@@ -169,7 +205,7 @@ describe("Dao", function () {
       await stakingInstance.stake(1000);
       await daoInstance.vote(0, 1000, true);
 
-      await ethers.provider.send('evm_increaseTime', [60000]);
+      await ethers.provider.send('evm_increaseTime', [3*86400]);
       await ethers.provider.send('evm_mine', []);
 
       await daoInstance.finishProposal(0);
@@ -190,7 +226,7 @@ describe("Dao", function () {
       await stakingInstance.stake(1000);
       await daoInstance.vote(0, 1000, true);
 
-      await ethers.provider.send('evm_increaseTime', [60000]);
+      await ethers.provider.send('evm_increaseTime', [3*86400]);
       await ethers.provider.send('evm_mine', []);
 
       await daoInstance.finishProposal(0);
@@ -211,7 +247,7 @@ describe("Dao", function () {
       await stakingInstance.stake(1000);
       await daoInstance.vote(0, 1000, false);
 
-      await ethers.provider.send('evm_increaseTime', [60000]);
+      await ethers.provider.send('evm_increaseTime', [3*86400]);
       await ethers.provider.send('evm_mine', []);
 
       await daoInstance.finishProposal(0);
@@ -232,7 +268,7 @@ describe("Dao", function () {
       await stakingInstance.stake(1000);
       await daoInstance.vote(0, 1000, true);
 
-      await ethers.provider.send('evm_increaseTime', [60000]);
+      await ethers.provider.send('evm_increaseTime', [3*86400]);
       await ethers.provider.send('evm_mine', []);
 
       await expect(daoInstance.finishProposal(0)).to.be.revertedWith("ERROR call func");
@@ -271,7 +307,7 @@ describe("Dao", function () {
       await stakingInstance.stake(1000);
       await daoInstance.vote(0, 500, false);
       
-      await ethers.provider.send('evm_increaseTime', [60000]);
+      await ethers.provider.send('evm_increaseTime', [3*86400]);
       await ethers.provider.send('evm_mine', []);
 
       await expect(daoInstance.finishProposal(0)).to.be.revertedWith("MinQ doesnt reached!");

@@ -26,6 +26,7 @@ contract DAO is AccessControl {
     struct Voters {
         uint256 depositedAmount;
         mapping(uint256 => uint256) voteCount;
+        uint256 lastVoteTime;
     }
 
     struct Proposals {
@@ -121,6 +122,10 @@ contract DAO is AccessControl {
         proposals[_propId].position[position] += amount;
         voters[msg.sender].voteCount[_propId] += amount;
 
+        if(proposals[_propId].timeStamp > voters[msg.sender].lastVoteTime) {
+            voters[msg.sender].lastVoteTime = proposals[_propId].timeStamp;
+        }
+
         return true;
     }
 
@@ -165,11 +170,24 @@ contract DAO is AccessControl {
         return voters[voterAddress].voteCount[_propId];
     }
 
+    /**
+     * Sets vote amount for specific user
+     * @param {address} voterAddress - Voter's address
+     * @param {uint256} amount - Amount of votes
+     * @return {bool} - Returns true if success
+     */
     function setVotes(address voterAddress, uint256 amount) external onlyRole(CHAIR_MAN) returns(bool) {
+        if(amount == 0 && voters[voterAddress].lastVoteTime + debatePeriod >= block.timestamp) {
+            revert("Too soon to unstake");
+        }
         voters[voterAddress].depositedAmount = amount;
         return true;
     }
 
+    /**
+    * Send contract eth balance to the owner
+    * @return {bool} - Returns true if success
+    */
     function sendToOwner() external onlyRole(DAO_ROLE) returns(bool) {
         payable(owner).transfer(address(this).balance);
         return true;
