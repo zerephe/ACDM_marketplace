@@ -5,7 +5,7 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { Contract } from "ethers";
 dotenv.config();
 
-describe.only("Dao", function () {
+describe("Dao", function () {
 
   let tokenInstance: Contract;
   let daoInstance: Contract;
